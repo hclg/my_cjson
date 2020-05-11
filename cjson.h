@@ -57,7 +57,7 @@ typedef struct cjson_Hooks
     void *(*malloc_fn)(size_t sz);
     void (*free_fn)(void *ptr);
 }cjson_Hooks;
-/*初始化提供malloc，realloc和free函数*/
+/*提供malloc，realloc和free函数*/
 extern void cjson_InitHooks(cjson_Hooks *hooks);
 
 /*提供一个json模块，会返回查询的json对象，完成后调用cjson_delete函数*/
