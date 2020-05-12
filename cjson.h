@@ -103,7 +103,7 @@ extern cjson *cjson_CreateStringArray(const char **strings, int count);
 /*添加数组或对象项*/
 extern void cjson_AddItemToArray(cjson *array, cjson *item);
 extern void cjson_AddItemToObject(cjson *object, const char *string, cjson *item);
-extern void cjson_AddItemToObjectCS(cjson *array, cjson *item);
+extern void cjson_AddItemToObjectCS(cjson *array, const char *string, cjson *item);
 
 /*将对项的引用添加*/
 extern void cjson_AddItemReferenceToArray(cjson *array, cjson *item);

@@ -31,7 +31,7 @@
 
 static const char *ep;//错误指针
 const char *cjson_GetErrorPtr(void) {return ep;}
-/*忽略大小写，字符串比较,s1>s2输出大于0，否着小于0，如果只有一个字符指针指向NULL就1*/
+/*忽略大小写，相等等于0，字符串比较,s1>s2输出大于0，否着小于0，如果只有一个字符指针指向NULL就1*/
 static int cjson_strcasecmp(const char *s1, const char *s2) {
   if (!s1) return (s1 == s2) ? 0 : 1;
   if (!s2) return 1;
@@ -453,7 +453,7 @@ cjson *cjson_ParseWithOpts(const char *value, const char **return_parse_end, int
   return c;
 }
 /*默认不检查NULL终止符,cjson字符串的解析新建根*/
-cjson *cjson_Parse(const char value) {return cjson_ParseWithOpts(value, 0, 0);}
+cjson *cjson_Parse(const char *value) {return cjson_ParseWithOpts(value, 0, 0);}
 
 /*将cjson实例结构呈现为文本*/
 char *cjson_Print(cjson *item) {return print_value(item, 0, 1, 0); }
@@ -701,7 +701,309 @@ static char *print_array(cjson *item, int depth, int fmt, printbuffer *p) {
     *ptr++ = 0;
   }
   return out;
+} 
+
+
+/*以文本建立对象，同上*/
+/*
+    以下数据为格式分析：
+{
+    "name":"jack(\"bee\") Nimble",
+    "format":{
+        "type":"rect",
+        "width":1920
+        }
 }
+    1.检测到'{';
+    2.跳过空白字符，换行符；
+    3.通过parse_string获取name；
+    4.判断键值对表示符':';
+    5.通过parse_value获取对应value；
+    6.parse_value和前面的几个函数一样，是递归函数
+    7.通过while循环解析剩下的键值对
+*/
+static const char *parse_object(cjson *item, const char *value) {
+  cjson *child;
+  if (*value != '{') {
+    ep = value;
+    return 0;
+  }
+  item->type = cjson_Object;
+  value = skip(value+1);
+  if (*value == '}')
+    return value+1;
+  item->child = child = cjson_New_Item();
+  if (!child) return 0;
+  value = skip(parse_string(child, skip(value)));
+  if (!value) return 0;
+  child->string = child->valuestring;
+  child->valuestring = 0;
+  if (*value != ':') {
+    ep = value;
+    return 0;
+  }
+  value = skip(parse_value(child, skip(value+1)));
+  if (!value) return 0;
+  while (*value == ',') {
+    cjson *new_item;
+    if (!(new_item = cjson_New_Item())) return 0;
+    child->next = new_item;
+    new_item->prev = child;
+    child = new_item;
+    value = skip(parse_string(child, skip(value+1)));
+    if (!value) return 0;
+    child->string = child->valuestring;
+    child->valuestring = 0;
+    if (*value != ':') {
+      ep = value;
+      return 0;
+    }
+    value = skip(parse_value(child, skip(value+1)));
+    if (!value) return 0;
+  }
+  if (*value == '}')
+    return value+1;
+  ep = value;
+  return 0;
+}
+
+/*将对象输出为文档格式*/
+static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
+    /*
+    item 0,1,0;item 0,0,0
+    局部变量说明：
+        1.entries：键值对value
+        2.names：键值对key；
+        3.out：指向输出的字符串
+        4.ptr：指向out输出的字符串
+        5.ret：执行函数时返回的字符串地址；
+        6.str：执行函数返回的字符串地址
+        7.len：字符串的长度
+        8.i：for循环用于计数的变量
+        9.j: for循环用于计数的变量
+        10.child：指向节点的指针。
+        11.fail输出出错时的标志
+        12.numenties：用于统计当前结构深度层次上的节点个数
+    */
+  char **entrise = 0, **names = 0;/*值得字符串数组，名字的字符串数组*/
+  char *out = 0, *ptr, *ret, *str;/**/
+  int len = 7, i = 0, j;
+  cjson *child = item->child;
+  int numentries = 0, fail = 0;
+  size_t tmplen = 0;
+  /*计算字符串组数*/
+  while (child) ++numentries, child = child->next;
+  /* 空对象类型*/
+  if (!numentries) {
+    if (p) out = ensure(p, fmt ? depth+4 : 3);
+    else out = (char *)cjson_malloc(fmt ? depth+4 : 3);
+    if (!out ) return 0;
+    ptr = out;
+    *ptr++ = '{';
+    if (fmt) {
+      *ptr++ = '\n';
+      for (i = 0; i < depth-1; ++i) *ptr++ = '\t';
+    }
+    *ptr++ = '}';
+    *ptr++ = 0;
+    return out;
+  }
+  if (p) {
+    i = p->offset;
+    len = fmt ? 2 : 1;
+    ptr = ensure(p, len+1);
+    if (!ptr) return 0;
+    *ptr++ = '{';
+    p->offset += len;
+    child = item->child;
+    ++depth;
+    while (child)
+    {
+      if (fmt) {
+        ptr = ensure(p, depth);
+        if (!ptr) return 0;
+        for (j = 0; j < depth; ++j)//我的习惯
+          *ptr++ = '\t';
+          p->offset += depth;
+      }
+      print_string_ptr(child->string, p);
+      p->offset = update(p);
+
+      len = fmt ? 2 : 1;
+      ptr = ensure(p, len);
+      if (!ptr) return 0;
+      *ptr++ = ':';
+      if (fmt) 
+        *ptr++ = '\t';
+      p->offset += len;
+      print_value(child, depth, fmt, p);
+      p->offset = update(p);
+
+      len = (fmt ? 1 : 0) + (child->next ? 1 : 0);
+      ptr = ensure(p, len+1);
+      if (!ptr) return 0;
+      if (child->next)
+        *ptr++ = ',';
+      if (fmt)
+        *ptr++ = '\n';
+      *ptr  = 0;
+      p->offset += len;
+      child = child->next;
+    }
+    ptr = ensure(p, fmt?(depth+1):2);
+    if(!ptr) return 0;
+    if (fmt) 
+      for(i = 0; i < depth-1; ++i)
+        *ptr++ = '\t';
+    *ptr++ = '}';
+    *ptr = 0;
+    out = (p->buffer) + i;
+  }
+  else {
+    /*分配空间*/
+    entrise = (char **)cjson_malloc(numentries * sizeof(char*));
+    if (!entrise) return 0;
+    names =   (char **) cjson_malloc(numentries * sizeof(char*));
+    if (!names) {
+      cjson_free(entrise);
+      return 0;
+    }
+    memset(ensure, 0, sizeof(char*) * numentries);
+    memset(names, 0, sizeof(char*) * numentries);
+
+    /*搜集全部字符串*/
+    child = item->child;
+    ++depth;
+    if (fmt) len += depth;
+    while (child) {
+      names[i] = str = print_string_ptr(child->string, 0);
+      entrise[i++] = ret = print_value(child, depth, fmt, 0);
+      if (str && ret) len += strlen(ret) + strlen(str) + 2 + (fmt ? 2+depth : 0);
+      else 
+        fail = 1;
+      child = child->next;
+    }
+    if (!fail) out = (char *) cjson_malloc(len);
+    if (!out) fail = 1;
+    /*错误处理*/
+    if (fail) {
+      for (i = 0; i < numentries; ++i) {
+        if (names[i]) cjson_free(names[i]);
+        if (entrise[i]) cjson_free(entrise[i]);
+      }
+      cjson_free(names);
+      cjson_free(entrise);
+      return 0;
+    }
+
+    /*构成输出*/
+    *out = '{';
+    ptr = out+1;
+    if (fmt) *ptr++ = '\n';
+    *ptr = 0;
+    for (i = 0; i < numentries; ++i) {
+      if (fmt) 
+        for (j = 0; j < depth; ++j)
+          *ptr++ = '\t';
+        tmplen = strlen(names[i]);
+        memcpy(ptr, names[i], tmplen);
+        ptr += tmplen;
+        *ptr++ = ':';
+        if (fmt)
+          *ptr++ = '\t';
+        strcpy(ptr, entrise[i]);
+        ptr += strlen(entrise[i]);
+        if (i != numentries-1)
+          *ptr++ = ',';
+        if (fmt) *ptr++ = '\n';
+        *ptr = 0;
+        cjson_free(names[i]);
+        cjson_free(entrise[i]);
+    }
+    cjson_free(names);
+    cjson_free(entrise);
+    if (fmt) 
+      for (i = 0; i < depth-1; ++i) *ptr++ = '\t';
+    *ptr++ = '}';
+    *ptr++ = 0;
+  }
+  return out;
+}
+
+
+/*取得数组长度 取得索引项*/
+int cjson_GetArraySize(cjson *array) {
+  cjson *c = array->child;
+  int i = 0;
+  while (c)
+    c = c->next, ++i;
+  return i;
+}
+
+cjson *cjson_GetArrayItem(cjson *array, int item) {
+  cjson *c = array->child;
+  int i = 0;
+  while (c && item--)
+    c = c->next;
+  return c;
+}
+
+cjson *cjson_GetObjectItem(cjson *object, const char *string) {
+  cjson *c = object->child;
+  while (c && cjson_strcasecmp(c->string, string))
+    c = c->next;
+  return c;
+}
+
+/*添加后一个项*/
+static void suffix_object(cjson *prev, cjson *item) {
+  prev->next = item;
+  item->prev = prev;
+}
+
+/*引用处理, 创建引用项*/
+static cjson *create_reference(cjson *item) {
+  cjson *ref = cjson_New_Item();
+  if (!ref) return 0;
+  memcpy(ref, item, sizeof(cjson));
+  ref->string = 0;
+  ref->type |= cjson_IsReference;
+  ref->next = ref->prev = 0;
+  return ref;
+}
+
+/*添加项到数组或者对象的后面*/
+void cjson_AddItemToArray(cjson *array, cjson *item) {
+  cjson *c = array->child;
+  if (!item) return;
+  if (!c) array->child = item;
+  else {
+    while (c && c->next)
+      c = c->next;
+    suffix_object(c, item);
+  }
+}
+
+void cjson_AddItemToObject(cjson *object, const char *string, cjson *item) {
+  if (!item) return;
+  if (item->string) cjson_free(item->string);
+  item->string = cjson_strdup(string);
+  cjson_AddItemToArray(object, item);
+}
+/*添加字符串常量的项*/
+void cjson_AddItemToObjectCS(cjson *object, const char *string, cjson *item) {
+  if (!item) return;
+  if (!(item->type & cjson_StringIsConst) && item->string)
+    cjson_free(item->string);
+  item->string = (char *)string;
+  item->type |= cjson_StringIsConst;
+  cjson_AddItemToArray(object, item);
+}
+
+void cjson_AddItemReferenceToArray(cjson *array, cjson *item) {
+  cjson_AddItemToArray(array, create_reference(item));
+}
+
 
 // int main() {
 //   printf("%.0lf\n", 1.0e60);
