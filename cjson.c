@@ -124,9 +124,9 @@ static int pow2gt(int x) {/*大于或等于的它的最接近它的2次幂数字
 
 typedef struct 
 {
-  char *buffer;
-  int length;
-  int offset;
+  char *buffer;/*内存字符串*/
+  int length;/*内存容量大小*/
+  int offset;/*偏移量*/
 } printbuffer;//输出缓冲
 
 /*缓冲内存分配，偏移量是与数组第一个元素的起始地址的距离可用于确定位置*/
@@ -308,6 +308,399 @@ static const char *parse_string(cjson *item, const char *str) {
   item->valuestring = out;
   item->type = cjson_String;
   return ptr;
+}
+
+/*输出这个item中的string*/
+static char *print_string_ptr(const char *str, printbuffer *p) {
+  const char *ptr;
+  char *ptr2, *out;
+  int len = 0, flag = 0;
+  unsigned char token;
+/*
+    局部变量说明：
+        1.ptr：指向参数传入的str字符串
+        2.ptr2：指向要输出的out字符串
+        3.out：输出字符串
+        4.len：输出字符串的长度，用于内存分配出输出字符串的空间大小
+        5.token：字符保存中间变量
+    */
+  for (ptr = str; *ptr; ++ptr) flag |= ((*ptr > 0 && *ptr < 32) || (*ptr == '\"') || (*ptr == '\\')) ? 1 : 0;
+  if (!flag) {
+    len = ptr - str;
+    if (p) out = ensure(p, len + 3);
+    else out = (char *)cjson_malloc(len + 3);
+    if (!out ) return 0;
+    ptr2 = out;
+    *ptr2++ = '\"';
+    strcpy(ptr2, str);
+    ptr2[len] = '\"';
+    ptr2[len+1] = 0;
+    return out;
+  }
+
+  if (!str) {
+    if (p) out = ensure(p, 3);
+    else out = (char *)cjson_malloc(3);
+    if (!out) return 0;
+    strcpy(out, "\"\"");
+    return out;
+  }
+  ptr = str;
+  while ((token = *ptr) && ++len) {
+    if (strchr("\"\\\b\f\n\r\t", token))
+      ++len;
+    else if (token < 32) len += 5;            
+          /*
+            除了前面列出来的空白字符，其他的空白都+5的长度，
+            不知道为什么，应该与unicode编码有关
+            如：
+                "\uxxxx",u再加4个字符就是5个字符，前面解析字符的时候是这么解析的。
+          */
+    ++ptr;
+  }
+
+  if (p) out = ensure(p, len+3);
+  else out = (char *) cjson_malloc(len + 3);
+  if (!out) return 0;
+
+  ptr2 = out;
+  ptr = str;
+  *ptr2++ = '\"';
+  while (*ptr) {
+    if ((unsigned char) *ptr > 31 && *ptr != '\"' && *ptr != '\\') 
+      *ptr2++ = *ptr++;
+      else {
+        *ptr2++ = '\\';
+        switch (token = *ptr++) 
+        {
+        case '\\':
+          *ptr2++ = '\\';
+          break;
+        case '\"':
+          *ptr2++ = '\"';
+          break;
+        case '\b':
+          *ptr2++ = 'b';
+          break;
+        case '\f':
+          *ptr2++ = 'f';
+          break;
+        case '\n':
+          *ptr2++ = 'n';
+          break;
+        case '\r':
+          *ptr2++ = 'r';
+          break;
+        case '\t':
+          *ptr2++ = 't';
+          break;
+        default:
+          sprintf(ptr2, "u%04x", token);
+          ptr2 += 5;
+          break;
+        }
+      }
+  }
+  *ptr2++ = '\"';
+  *ptr2++ = 0;
+  return out;
+}
+/*Invote print_string_ptr (which is useful) on an item.*/
+static char *print_string(cjson *item, printbuffer *p) {return print_string_ptr(item, p);}
+/*提前声明原型*/
+static const char *parse_value(cjson *item, const char *value);
+static char *print_value(cjson *item, int depth, int fmt, printbuffer *p);
+static const char *parse_array(cjson *item, const char *value);
+static char *print_array(cjson *item, int depth, int fmt, printbuffer *p);
+static const char *parse_object(cjson *item, const char *value);
+static char *print_object(cjson *item, int depth, int fmt, printbuffer *p);
+
+/*跳过一些空字符*/
+static const char *skip(const char *in) {
+  while (in && *in && (unsigned char) *in <= 32) ++in;
+  return in;
+}
+/*创建一个根,并且填充
+require_null_terminated 是为了确保字符串必须以'\0'结尾
+若参数提供return_parse_end将返回json字符串解析完成之后的部分进行返回
+*/
+cjson *cjson_ParseWithOpts(const char *value, const char **return_parse_end, int require_null_terminated) {
+    /*
+    返回一个json结构的数据
+    局部变量说明：
+        1.end：当解析完真个字符串的时候，最后一个字符如果不是NULL，则代表这个输入的value的字符串
+                可能有问题；
+        2.c：cjson节点，也是所谓的根节点。
+    */
+  const char *end = 0;
+  cjson *c = cjson_New_Item();
+  ep = 0;
+  if (!c) return 0;//内存分配失败
+  end = parse_value(c, skip(value));
+  if (!end) {
+    cjson_Delete(c);
+    return 0;
+  }/*解析失败*/
+  if (require_null_terminated) {
+    end = skip(end);
+    if (*end) {/*空字符后没结束*/
+      cjson_Delete(c);
+      ep = end;
+      return 0;
+    }
+  }
+  if (return_parse_end) *return_parse_end = end;
+  return c;
+}
+/*默认不检查NULL终止符,cjson字符串的解析新建根*/
+cjson *cjson_Parse(const char value) {return cjson_ParseWithOpts(value, 0, 0);}
+
+/*将cjson实例结构呈现为文本*/
+char *cjson_Print(cjson *item) {return print_value(item, 0, 1, 0); }
+char *cjson_PrintUnformatted(cjson *item) {return print_value(item, 0, 0, 0); }
+
+char *cjson_PrintBuffered(cjson *item, int prebuffer, int fmt) {
+  printbuffer p;
+  p.buffer = (char *) cjson_malloc(prebuffer);
+  p.length = prebuffer;
+  p.offset = 0;
+  return print_value(item, 0, fmt, &p);
+  return p.buffer;
+}
+/*根据首字符的不同来决定采用哪种方式进行解析字符串*/
+static const char *parse_value(cjson *item, const char *value) {
+  if (!value) return 0;
+  if (!strncmp(value, "null", 4)) {
+    item->type = cjson_Null;
+    return value + 4;
+  }
+  if (!strncmp(value, "false", 5)) {
+    item->type = cjson_False;
+    return value + 5;
+  }
+  if (!strncmp(value, "true", 4)) {
+    item->type = cjson_True;
+    return value + 4;  
+  }
+  if (!strncmp(value, "\"", 4)) 
+    return parse_string(item, value);
+  if (*value == '-' || (*value >= '0' && *value <= '9'))
+    return parse_number(item, value);
+  if (*value == '[') 
+    return parse_array(item, value);
+  if (*value == '{')
+    return parse_object(item, value);
+
+    ep = value;
+    return 0;
+}
+/*以文本呈现一个值,根据item的类型来选这使用哪种方式进行数的输出格式*/
+
+static char *print_value(cjson *item, int depth, int fmt, printbuffer *p) {
+  char *out = 0;
+  if (!item) return 0;
+  if (p) {
+    switch ((item->type) & 255)
+    {
+    case cjson_Null:
+      out = ensure(p, 5);
+      if (out) strcpy(out, "null");
+      break;
+    case cjson_False :
+      out = ensure(p, 6);
+      if (out) strcpy(out, "false");
+      break;
+    case cjson_True:
+      out = ensure(p, 5);
+      if (out) strcpy(out, "True");
+      break;
+    case cjson_Number:
+      out = print_number(item, p);
+      break;
+    case cjson_String:
+      out = print_string(item, p);
+      break;
+    case cjson_Array:
+      out = print_array(item, depth, fmt, p);
+      break;
+    case cjson_Object:
+      out = cjson_object(item, depth, fmt, p);
+      break;
+    }
+  }
+  else {
+    switch ((item->type) & 255)
+    {
+    case cjson_Null:
+      out = cjson_strdup("null");
+      break;
+    case cjson_False :
+      out = cjson_strdup("false");
+      break;
+    case cjson_True:
+      out = cjson_strdup("True");
+      break;
+    case cjson_Number:
+      out = print_number(item, 0);
+      break;
+    case cjson_String:
+      out = print_string(item, 0);
+      break;
+    case cjson_Array:
+      out = print_array(item, depth, fmt, 0);
+      break;
+    case cjson_Object:
+      out = cjson_object(item, depth, fmt, 0);
+      break;
+    }
+  }
+  return out;
+}
+
+/* 从输入中构建一个数组*/
+/*格式
+  [
+    [0,1,0],
+    [1,1,0],
+    [1,1,1];
+  ]
+    1.先检测到[
+    2.然后skip掉换行符，空白字符
+    3.parse_value从新检测字符串，也就能再次检测又是一个数组了[0,-1,0],
+    递归进入解析[0,-1,0],并解析出0，-1，保存在节点中
+    4.检测是否遇到','字符，如果遇到说明后面还有内容需要解析
+    5.循环解析接下来的内容
+*/
+static const char *parse_array(cjson *item, const char *value) {
+  cjson *child;
+  if (*value != '[') {
+    ep = value;
+    return 0;
+  }
+  item->type = cjson_Array;
+  value = skip(value + 1);
+  if (*value == ']')
+    return value + 1;/*空数组*/
+  item->child = child = cjson_New_Item();
+  if (!item->child) return 0;/*内存分配失败*/
+  value = skip(parse_value(child, skip(value)));
+  if (!value) return 0;/*解析错误*/
+  while(*value == ',') {
+    cjson *new_item;
+    if (!(new_item = cjson_New_Item())) return 0;/*内存分配失败*/
+    child->next = new_item;
+    new_item->prev = child;
+    child = new_item;
+    value = skip(parse_value(child, skip(value+1)));
+    if (!value) return 0; /*同上*/
+  }
+  if (*value == ']')
+    return value + 1;/*数组结束的后一个字符*/
+  ep = value;
+  return 0;
+}
+
+/*将数组输出为文档格式*/
+static char *print_array(cjson *item, int depth, int fmt, printbuffer *p) {
+  /*局部变量说明
+    entries: 输出字符串数组，从节点中提取到字符串数组中
+    out:entries 字符串数组中得到字符串out
+    ptr: 指向out 得指针
+    ret: 函数执行结果的返回值
+    len: 字符串长度
+    child :儿子节点也就是当前操作节点
+    numentries: 统计entries 的个数
+    fail: 错误标志
+    fmt: 用来调整格式
+    tmplen: 临时字符串长度
+    i:遍历
+  */
+  char **entries, *out = 0, *ptr, *ret;
+  int len = 5, i = 0, numentries = 0, fail = 0;
+  size_t tmplen = 0;
+  cjson *child = item->child;
+
+  /*多少个数组*/
+  while (child) ++numentries, child = child->next;
+  /*显示处理numentries == 0*/
+  if (!numentries) {
+    if (p) out = ensure(p, 3);
+    else out = (char *) cjson_malloc(3);
+    if (out) strcpy(out, "[]");
+    return out;
+  }
+
+  if (p) {
+    /*合并输出数组*/
+    i = p->offset;
+    ptr = ensure(p, 1);
+    if (!ptr) return 0;
+    *ptr = '[';
+    p->offset++;
+    child = item->child;
+    while (child && !fail) {
+      print_value(child, depth+1, fmt, p);
+      p->offset = update(p);
+      if (child->next) {
+        len = fmt ? 2 : 1;
+        ptr = ensure(p, len + 1);
+        if (!ptr) return 0;
+        *ptr++ = ',';
+        if (fmt) *ptr++ = ' ';
+        *ptr = 0;
+        p->offset += len;
+      }
+      child = child->next;
+    }
+    ptr = ensure(p, 2);
+    if (!ptr) return 0;
+    *ptr++ = ']';
+    *ptr = 0;
+    out = (p->buffer) + i;
+  }
+  else {
+    /*分配一个数组保持数组值*/
+    entries = (char **)cjson_malloc(numentries * sizeof(char *));
+    if (!entries) return 0;
+    memset(entries, 0, numentries*sizeof(char *));
+    /*取出所有的结果*/
+    child = item->child;
+    while (child && !fail) {
+      ret = print_value(child, depth+1, fmt, 0);
+      entries[i++] = ret;
+      if (ret) len += strlen(ret)+2+(fmt ? 1 : 0);
+      else fail = 1;
+      child = child->next;
+    }
+
+    if (!fail) out = (char *)cjson_malloc(len);
+    if (!out) fail = 1;
+    if (fail) {
+      for (i = 0; i < numentries; ++i)
+        if (entries[i]) cjson_free(entries[i]);
+      cjson_free(entries);
+      return 0;
+    }
+    /*构成输出数组*/
+    *out = '[';
+    ptr = out + 1;
+    *ptr = 0;
+    for (i = 0; i < numentries; ++i) {
+      tmplen = strlen(entries[i]);
+      memcpy(ptr, entries[i], tmplen);
+      ptr += tmplen;
+      if (i != numentries-1) {
+        *ptr++ = ',';
+        if (fmt) *ptr++ = ' ';
+        *ptr = 0;
+      }
+      cjson_free(entries[i]);
+    }
+    cjson_free(entries);
+    *ptr++ = ']';
+    *ptr++ = 0;
+  }
+  return out;
 }
 
 // int main() {

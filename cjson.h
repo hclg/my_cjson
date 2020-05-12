@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 /*JSON TYPE*/
-#define cjson_Flase 0
+#define cjson_False 0
 #define cjson_True 1
 #define cjson_Null 2
 #define cjson_Number 3
