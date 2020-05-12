@@ -1003,7 +1003,9 @@ void cjson_AddItemToObjectCS(cjson *object, const char *string, cjson *item) {
 void cjson_AddItemReferenceToArray(cjson *array, cjson *item) {
   cjson_AddItemToArray(array, create_reference(item));
 }
-
+void cjson_AddItemReferenceToObject(cjson *array, const char *string, cjson *item) {
+  cjson_AddItemToObject(array, string, create_reference(item));
+}
 
 // int main() {
 //   printf("%.0lf\n", 1.0e60);
