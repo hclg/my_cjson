@@ -278,26 +278,17 @@ static const char *parse_string(cjson *item, const char *str) {
         else if (uc < 0x800)  len = 2;
         else if (uc < 0x10000) len = 3;
         ptr2 += len;
-
-        switch (len)
-        {
-        case 4:
+        while (len-- > 1) {
           *--ptr2 = ((uc | 0x80) & 0xBF);
           uc >>= 6;
-        case 3:
-          *--ptr2 = ((uc | 0x80) & 0xBF);
-          uc >>= 6;
-        case 2:
-          *--ptr2 = ((uc | 0x80) & 0xBF);
-          uc >>= 6;
-        case 1:
-          *--ptr2 = (uc | firstByteMark[len]);
         }
+        *--ptr2 = (uc | firstByteMark[len]);
+
         ptr2 += len;
         break;
-        default :
-          *ptr2++ = *ptr;
-          break;
+      default :
+        *ptr2++ = *ptr;
+        break;
       }
       ++ptr;
     }
@@ -406,7 +397,7 @@ static char *print_string_ptr(const char *str, printbuffer *p) {
   return out;
 }
 /*Invote print_string_ptr (which is useful) on an item.*/
-static char *print_string(cjson *item, printbuffer *p) {return print_string_ptr(item, p);}
+static char *print_string(cjson *item, printbuffer *p) {return print_string_ptr(item->valuestring, p);}
 /*提前声明原型*/
 static const char *parse_value(cjson *item, const char *value);
 static char *print_value(cjson *item, int depth, int fmt, printbuffer *p);
@@ -488,10 +479,10 @@ static const char *parse_value(cjson *item, const char *value) {
     return parse_number(item, value);
   if (*value == '[') 
     return parse_array(item, value);
-  if (*value == '{')
+  if (*value == '{') 
     return parse_object(item, value);
 
-    ep = value;
+  ep = value;
     return 0;
 }
 /*以文本呈现一个值,根据item的类型来选这使用哪种方式进行数的输出格式*/
@@ -524,7 +515,7 @@ static char *print_value(cjson *item, int depth, int fmt, printbuffer *p) {
       out = print_array(item, depth, fmt, p);
       break;
     case cjson_Object:
-      out = cjson_object(item, depth, fmt, p);
+      out = print_object(item, depth, fmt, p);
       break;
     }
   }
@@ -550,7 +541,7 @@ static char *print_value(cjson *item, int depth, int fmt, printbuffer *p) {
       out = print_array(item, depth, fmt, 0);
       break;
     case cjson_Object:
-      out = cjson_object(item, depth, fmt, 0);
+      out = print_object(item, depth, fmt, 0);
       break;
     }
   }
@@ -822,9 +813,9 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
       if (fmt) {
         ptr = ensure(p, depth);
         if (!ptr) return 0;
-        for (j = 0; j < depth; ++j)//我的习惯
+        for (j = 0; j < depth; ++j)
           *ptr++ = '\t';
-          p->offset += depth;
+        p->offset += depth;
       }
       print_string_ptr(child->string, p);
       p->offset = update(p);
@@ -902,23 +893,23 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
     if (fmt) *ptr++ = '\n';
     *ptr = 0;
     for (i = 0; i < numentries; ++i) {
-      if (fmt) 
+      if (fmt)
         for (j = 0; j < depth; ++j)
           *ptr++ = '\t';
-        tmplen = strlen(names[i]);
-        memcpy(ptr, names[i], tmplen);
-        ptr += tmplen;
-        *ptr++ = ':';
-        if (fmt)
-          *ptr++ = '\t';
-        strcpy(ptr, entrise[i]);
-        ptr += strlen(entrise[i]);
-        if (i != numentries-1)
-          *ptr++ = ',';
-        if (fmt) *ptr++ = '\n';
-        *ptr = 0;
-        cjson_free(names[i]);
-        cjson_free(entrise[i]);
+      tmplen = strlen(names[i]);
+      memcpy(ptr, names[i], tmplen);
+      ptr += tmplen;
+      *ptr++ = ':';
+      if (fmt)
+        *ptr++ = '\t';
+      strcpy(ptr, entrise[i]);
+      ptr += strlen(entrise[i]);
+      if (i != numentries-1)
+        *ptr++ = ',';
+      if (fmt) *ptr++ = '\n';
+      *ptr = 0;
+      cjson_free(names[i]);
+      cjson_free(entrise[i]);
     }
     cjson_free(names);
     cjson_free(entrise);
