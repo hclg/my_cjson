@@ -1230,7 +1230,7 @@ void cjson_Minify(char *json) {
     else if (*json == '/' && json[1] == '/')
       while (*json && *json != '\n')
         ++json;/*注释道行末*/
-    else if (*json == '/' && json[1] = '*') {/*同样也是注释*/
+    else if (*json == '/' && json[1] == '*') {/*同样也是注释*/
       while (*json && !(*json == '*' && json[1] == '/'))
         ++json;
       json += 2;
