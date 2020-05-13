@@ -942,7 +942,6 @@ int cjson_GetArraySize(cjson *array) {
 
 cjson *cjson_GetArrayItem(cjson *array, int item) {
   cjson *c = array->child;
-  int i = 0;
   while (c && item--)
     c = c->next;
   return c;
@@ -1006,6 +1005,250 @@ void cjson_AddItemReferenceToArray(cjson *array, cjson *item) {
 void cjson_AddItemReferenceToObject(cjson *array, const char *string, cjson *item) {
   cjson_AddItemToObject(array, string, create_reference(item));
 }
+
+cjson *cjson_DetachItemFromArray(cjson *array, int which) {
+  cjson *c = array->child;
+  while (c && which--) 
+    c = c->next;
+  if (!c) return 0;
+  if (c->prev)
+    c->prev->next = c->next;
+  if (c->next) 
+    c->next->prev = c->prev;
+  c->prev = c->next = 0;
+  return c;
+}
+
+void cjson_DeleteItemFromArray(cjson *array, int which) {
+  cjson_Delete(cjson_DetachItemFromArray(array, which));
+}
+
+cjson *cjson_DetachItemFromObject(cjson *object, const char *string) {
+  cjson *c = object->child;
+  while (c && cjson_strcasecmp(object->string, string))
+    c = c->next;
+  if (!c) return 0;
+  if (c->prev) c->prev->next = c->next;
+  if (c->next) c->next->prev = c->prev;
+  c->prev = c->next = 0;
+  return c;
+}
+
+void cjson_DeleteItemFromObject(cjson *object, const char *string) {
+  cjson_Delete(cjson_DetachItemFromObject(object, string));
+}
+/*插入在which区域，原来的后移*/
+void cjson_InsertItemInArray(cjson *array, int which, cjson *newitem) {
+  cjson *c = array->child;
+  while (c && which--) c = c->next;
+  if (!c) {
+    cjson_AddItemToArray(array, newitem);
+    return;
+  }
+
+  suffix_object(newitem, c);
+  if (c != array->child)
+    suffix_object(c->prev, newitem);
+  else {
+    newitem->prev = c->prev;
+    array->child = newitem;
+  }
+}
+/*替换取代原来的cjson，原来的内存要清理*/
+void cjson_ReplaceItemInArray(cjson *array, int which, cjson *newitem) {
+  cjson *c;
+  if (!(c = cjson_GetArrayItem(array, which))) return;
+  newitem->prev = c->prev;
+  newitem->next = c->next;
+  if (c == array->child) array->child = newitem;
+  else c->prev->next = newitem;
+  if (c->next) c->next->prev = newitem;
+  c->next = c->prev = 0;
+  cjson_Delete(c);
+}
+
+void cjson_ReplaceItemInObject(cjson *object, const char *string, cjson *newitem) {
+  cjson *c = cjson_GetObjectItem(object, string);
+  if (!c) return;
+  if (newitem->string) cjson_free(newitem->string);//自己改动
+  newitem->string = cjson_strdup(string);
+  newitem->prev = c->prev;
+  newitem->next = c->next;
+  if (c == object->child) object->child = newitem;
+  else c->prev->next = newitem;
+  if (c->next)  c->next->prev = newitem;
+  c->next = c->prev = 0;
+  cjson_Delete(c);
+}
+
+/*创建基本类型*/
+cjson *cjson_CreateNull(void) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = cjson_Null;
+  return item;
+}
+
+cjson *cjson_CreateTrue(void) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = cjson_True;
+  return item;
+}
+
+cjson *cjson_CreateFals(void) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = cjson_False;
+  return item;
+}
+
+cjson *cjson_CreateBool(int b) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = b ? cjson_True : cjson_False;
+  return item;
+}
+
+cjson *cjson_CreateNumber(double num) {
+  cjson *item = cjson_New_Item();
+  if (item) {
+    item->type = cjson_Number;
+    cjson_SetNumberValue(item, num);
+  }
+  return item;
+}
+
+cjson *cjson_CreateString(const char *string) {
+  cjson *item = cjson_New_Item();
+  if (item) {
+    item->type = cjson_String;
+    item->valuestring = cjson_strdup(string);
+  }
+  return 0;
+}
+
+cjson *cjson_CreateArray(void) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = cjson_Array;
+  return item;
+}
+
+cjson *cjson_CreateObject(void) {
+  cjson *item = cjson_New_Item();
+  if (item) item->type = cjson_Object;
+  return item;
+}
+
+/* 创建数组 */
+cjson *cjson_CreateIntArray(const int *numbers, int count) {
+  int i;
+  cjson *now = 0, *prev = 0, *array = cjson_CreateArray();
+  for (i = 0; array && i < count; ++i) {
+    now = cjson_CreateNumber(numbers[i]);
+    if (!i) array->child = now;
+    else suffix_object(prev, now);
+    prev = now;
+  }
+  return array;
+}//其实这个直接写cjson_CreateDoubleArray(numbers, count)也没事
+
+cjson *cjson_CreateDoubleArray(const double *numbers, int count) {
+  int i;
+  cjson *now = 0, *prev = 0, *array = cjson_CreateArray();
+  for (i = 0; array && i < count; ++i) {
+    now = cjson_CreateNumber(numbers[i]);
+    if (!i) array->child = now;
+    else suffix_object(prev, now);
+    prev = now;
+  }
+  return array;
+}
+
+cjson *cjson_CreateStringArray(const char **strings, int count) {
+  int i;
+  cjson *now = 0, *prev = 0, *array = cjson_CreateArray();
+  for (i = 0; array && i < count; ++i) {
+    now = cjson_CreateString(strings[i]);
+    if (!i) array->child = now;
+    else suffix_object(prev, now);
+    prev = now;
+  }
+  return array;
+}
+
+/* 复制 */
+cjson *cjson_Duplicate(cjson *item, int recurse) {
+  cjson *newitem, *cptr, *nptr = 0, *newchild;
+  /*局部变量
+    newitem : 复制出来的新项
+    cptr : 指向原来item的子项遍历
+    nptr : 指向当前处理的指针的前一个,也就是上一项
+    newchild : 复制出来的新儿子项，也就是当前处理项
+  */
+  if (!item) return 0;
+  newitem = cjson_New_Item();/*创建新项*/
+  if (!newitem) return 0;
+  /*拷贝所有值*/
+  newitem->type = item->type & (~cjson_IsReference),
+  newitem->valueint = item->valueint,
+  newitem->valuedouble = item->valuedouble;
+  if (item->valuestring) {
+    newitem->valuestring = cjson_strdup(item->valuestring);
+    if (!newitem->valuestring) {
+      cjson_Delete(newitem);
+      return 0;
+    }
+  }
+  if (item->string) {
+    newitem->string = cjson_strdup(item->string);
+    if (!newitem->string) {
+      cjson_Delete(newitem);
+      return 0;
+    }
+  }
+  /*如果是非递归拷贝所有儿子的*/
+  if (!recurse) return newitem;
+  cptr = item->child;
+  while (cptr) {
+    newchild = cjson_Duplicate(cptr, 1);
+    if (!newchild) {
+      cjson_Delete(newitem);
+      return 0;
+    }
+    if (nptr) /*连接*/
+      suffix_object(nptr, newchild);
+    else
+      newitem->child = newchild;/*第一项*/
+    nptr = newchild;
+    cptr = cptr->next;
+  }
+  return newitem;
+}
+/*文本处理将注释和多余没用的空格处理掉*/
+void cjson_Minify(char *json) {
+  char *into = json;
+  while (*json) {
+    if (*json == ' ' || *json == '\t' || *json == '\n') 
+      ++json;/*空白字符*/
+    else if (*json == '/' && json[1] == '/')
+      while (*json && *json != '\n')
+        ++json;/*注释道行末*/
+    else if (*json == '/' && json[1] = '*') {/*同样也是注释*/
+      while (*json && !(*json == '*' && json[1] == '/'))
+        ++json;
+      json += 2;
+    }
+    else if (*json == '\"') {/*遇到"。。。"字符串时*/
+      *into++ = *json++;
+      while (*json && *json != '\"') {
+        if (*json == '\\') *into++ = *json++;/*防止转义\"所以遇到转义提前吸收*/
+        *into++ = *json++;
+      }
+      *into++ = *json++;
+    }
+    else 
+      *into++ = *json++;/*其他字符都要了*/
+  }
+  *into = 0;
+}
+
 
 // int main() {
 //   printf("%.0lf\n", 1.0e60);
