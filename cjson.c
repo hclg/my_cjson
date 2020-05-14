@@ -296,6 +296,7 @@ static const char *parse_string(cjson *item, const char *str) {
   *ptr2 = 0;
   if (*ptr == '\"')
     ++ptr;
+  
   item->valuestring = out;
   item->type = cjson_String;
   return ptr;
@@ -410,7 +411,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p);
 static const char *skip(const char *in) {
   while (in && *in && (unsigned char) *in <= 32) ++in;
   return in;
-}
+} 
 /*创建一个根,并且填充
 require_null_terminated 是为了确保字符串必须以'\0'结尾
 若参数提供return_parse_end将返回json字符串解析完成之后的部分进行返回
@@ -473,7 +474,7 @@ static const char *parse_value(cjson *item, const char *value) {
     item->type = cjson_True;
     return value + 4;  
   }
-  if (!strncmp(value, "\"", 4)) 
+  if (*value == '\"') 
     return parse_string(item, value);
   if (*value == '-' || (*value >= '0' && *value <= '9'))
     return parse_number(item, value);
@@ -734,6 +735,7 @@ static const char *parse_object(cjson *item, const char *value) {
     return 0;
   }
   value = skip(parse_value(child, skip(value+1)));
+  printf("%s\n", value);
   if (!value) return 0;
   while (*value == ',') {
     cjson *new_item;
@@ -1085,7 +1087,7 @@ cjson *cjson_CreateTrue(void) {
   return item;
 }
 
-cjson *cjson_CreateFals(void) {
+cjson *cjson_CreateFalse(void) {
   cjson *item = cjson_New_Item();
   if (item) item->type = cjson_False;
   return item;

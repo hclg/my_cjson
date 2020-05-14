@@ -130,12 +130,12 @@ extern void cjson_Minify(char *json);
 
 /* 快速创建内容的宏*/
 
-#define cjson_AddNullToObject(object, name)       cjson_AddItemObject(object, name, cjson_CreateNull())
-#define cjson_AddTrueToObject(object, name)       cjson_AddItemObject(object, name, cjson_CreateTrue())
-#define cjson_AddFalseToObject(object, name)      cjson_AddItemObject(object, name, cjson_CreateFalse())
-#define cjson_AddBollToObject(object, name, b)    cjson_AddItemObject(object, name, cjson_CreateBool(b))
-#define cjson_AddNumberToObject(object, name, n)  cjson_AddItemObject(object, name, cjson_CreateNumber(n))
-#define cjson_AddStringToObject(object, name, s)  cjson_AddItemObject(object, name, cjson_CreateString(s))
+#define cjson_AddNullToObject(object, name)       cjson_AddItemToObject(object, name, cjson_CreateNull())
+#define cjson_AddTrueToObject(object, name)       cjson_AddItemToObject(object, name, cjson_CreateTrue())
+#define cjson_AddFalseToObject(object, name)      cjson_AddItemToObject(object, name, cjson_CreateFalse())
+#define cjson_AddBollToObject(object, name, b)    cjson_AddItemToObject(object, name, cjson_CreateBool(b))
+#define cjson_AddNumberToObject(object, name, n)  cjson_AddItemToObject(object, name, cjson_CreateNumber(n))
+#define cjson_AddStringToObject(object, name, s)  cjson_AddItemToObject(object, name, cjson_CreateString(s))
 
 /*分配int值和double值相互传达*/
 #define cjson_SetIntValue(object, val)    ((object)?(object)->valueint=(object)->valuedouble=(val):(val))
