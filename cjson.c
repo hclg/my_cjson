@@ -1,25 +1,3 @@
-// /*
-//   Copyright (c) 2009 Dave Gamble
- 
-//   Permission is hereby granted, free of charge, to any person obtaining a copy
-//   of this software and associated documentation files (the "Software"), to deal
-//   in the Software without restriction, including without limitation the rights
-//   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-//   copies of the Software, and to permit persons to whom the Software is
-//   furnished to do so, subject to the following conditions:
- 
-//   The above copyright notice and this permission notice shall be included in
-//   all copies or substantial portions of the Software.
- 
-//   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-//   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-//   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-//   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-//   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-//   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-//   THE SOFTWARE.
-// */
-
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -90,7 +68,7 @@ static const char *parse_number(cjson *item, const char *num) {
   if(*num == '-') sign=-1, ++num;
   if (*num == '0') ++num;
   if (*num>='1' && *num<='9') 
-    do n=(n*10.0)+(*num-'0');
+    do n=(n*10.0)+(*num++ -'0');
     while (*num>='0' && *num<='9');
   if (*num == '.' && num[1]>='0' && num[1]<='9') {/*小数*/
     ++num;
@@ -233,6 +211,7 @@ static const char *parse_string(cjson *item, const char *str) {
   while (*ptr != '\"' && *ptr && ++len) /*记录除转义字符外完整应的字符个数*/
     if (*ptr++ == '\\')
       ++ptr;
+  // printf("%d\n", len);
   out = (char *)cjson_malloc(len + 1);
   if (!out) return 0;
   
@@ -278,12 +257,20 @@ static const char *parse_string(cjson *item, const char *str) {
         else if (uc < 0x800)  len = 2;
         else if (uc < 0x10000) len = 3;
         ptr2 += len;
-        while (len-- > 1) {
-          *--ptr2 = ((uc | 0x80) & 0xBF);
-          uc >>= 6;
-        }
-        *--ptr2 = (uc | firstByteMark[len]);
-
+				switch (len)
+				{
+				case 4:
+					*--ptr2 = ((uc | 0x80) & 0xBF);
+					uc >>= 6;
+				case 3:
+					*--ptr2 = ((uc | 0x80) & 0xBF);
+					uc >>= 6;
+				case 2:
+					*--ptr2 = ((uc | 0x80) & 0xBF);
+					uc >>= 6;
+				case 1:
+					*--ptr2 = (uc | firstByteMark[len]);
+				}
         ptr2 += len;
         break;
       default :
@@ -299,6 +286,7 @@ static const char *parse_string(cjson *item, const char *str) {
   
   item->valuestring = out;
   item->type = cjson_String;
+  // puts(out);
   return ptr;
 }
 
@@ -310,13 +298,15 @@ static char *print_string_ptr(const char *str, printbuffer *p) {
   unsigned char token;
 /*
     局部变量说明：
-        1.ptr：指向参数传入的str字符串
-        2.ptr2：指向要输出的out字符串
-        3.out：输出字符串
-        4.len：输出字符串的长度，用于内存分配出输出字符串的空间大小
-        5.token：字符保存中间变量
-    */
-  for (ptr = str; *ptr; ++ptr) flag |= ((*ptr > 0 && *ptr < 32) || (*ptr == '\"') || (*ptr == '\\')) ? 1 : 0;
+      1.ptr：指向参数传入的str字符串
+      2.ptr2：指向要输出的out字符串
+      3.out：输出字符串
+      4.len：输出字符串的长度，用于内存分配出输出字符串的空间大小
+      5.token：字符保存中间变量
+*/
+  for (ptr = str; *ptr; ++ptr) 
+    flag |= ((*ptr > 0 && *ptr < 32) || (*ptr == '\"') || 
+    (*ptr == '\\')) ? 1 : 0;
   if (!flag) {
     len = ptr - str;
     if (p) out = ensure(p, len + 3);
@@ -410,6 +400,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p);
 /*跳过一些空字符*/
 static const char *skip(const char *in) {
   while (in && *in && (unsigned char) *in <= 32) ++in;
+  // puts(in);
   return in;
 } 
 /*创建一个根,并且填充
@@ -490,6 +481,7 @@ static const char *parse_value(cjson *item, const char *value) {
 
 static char *print_value(cjson *item, int depth, int fmt, printbuffer *p) {
   char *out = 0;
+  // puts("print_value");//dug
   if (!item) return 0;
   if (p) {
     switch ((item->type) & 255)
@@ -521,8 +513,7 @@ static char *print_value(cjson *item, int depth, int fmt, printbuffer *p) {
     }
   }
   else {
-    switch ((item->type) & 255)
-    {
+    switch ((item->type) & 255) {
     case cjson_Null:
       out = cjson_strdup("null");
       break;
@@ -735,7 +726,7 @@ static const char *parse_object(cjson *item, const char *value) {
     return 0;
   }
   value = skip(parse_value(child, skip(value+1)));
-  printf("%s\n", value);
+  //printf("%s\n", value);
   if (!value) return 0;
   while (*value == ',') {
     cjson *new_item;
@@ -778,6 +769,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
         11.fail输出出错时的标志
         12.numenties：用于统计当前结构深度层次上的节点个数
     */
+  // puts("print_object");//dug
   char **entrise = 0, **names = 0;/*值得字符串数组，名字的字符串数组*/
   char *out = 0, *ptr, *ret, *str;/**/
   int len = 7, i = 0, j;
@@ -786,6 +778,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
   size_t tmplen = 0;
   /*计算字符串组数*/
   while (child) ++numentries, child = child->next;
+  // printf("item son number: %d\n", numentries);
   /* 空对象类型*/
   if (!numentries) {
     if (p) out = ensure(p, fmt ? depth+4 : 3);
@@ -861,15 +854,16 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
       cjson_free(entrise);
       return 0;
     }
-    memset(ensure, 0, sizeof(char*) * numentries);
+    memset(entrise, 0, sizeof(char*) * numentries);
     memset(names, 0, sizeof(char*) * numentries);
-
     /*搜集全部字符串*/
     child = item->child;
     ++depth;
     if (fmt) len += depth;
     while (child) {
+      // printf("!!!\n");
       names[i] = str = print_string_ptr(child->string, 0);
+      // printf("%s\n", str);//dug
       entrise[i++] = ret = print_value(child, depth, fmt, 0);
       if (str && ret) len += strlen(ret) + strlen(str) + 2 + (fmt ? 2+depth : 0);
       else 
