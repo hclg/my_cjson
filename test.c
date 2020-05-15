@@ -6,17 +6,20 @@
 /*解析文档为json， 返回文档并且输出*/
 
 void doit(char *text) {
+    FILE *fp = fopen("test.out", "a+");
     char *out;
     cjson *json = cjson_Parse(text);
     if (!json) {
         printf("Errorptr: [%s]", cjson_GetErrorPtr());
     }
     else {
-        out = cjson_Print(json);
+        out = cjson_PrintBuffered(json, 1, 1);//利用输出缓冲
+        // out = cjson_Print(json);
         cjson_Delete(json);
-        printf("%s\n", out);
+        fprintf(fp, "%s\n", out);
         free(out);
     }
+    fclose(fp);
 }
 
 void dofile(char *filename) {
@@ -144,5 +147,6 @@ int main() {
 	doit(text5);
 
     create_objects();
+    // fclose(f);
     return 0;
 }

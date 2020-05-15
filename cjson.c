@@ -442,6 +442,7 @@ cjson *cjson_Parse(const char *value) {return cjson_ParseWithOpts(value, 0, 0);}
 char *cjson_Print(cjson *item) {return print_value(item, 0, 1, 0); }
 char *cjson_PrintUnformatted(cjson *item) {return print_value(item, 0, 0, 0); }
 
+/*创建提供输出缓冲区，减少内存的分配次数*/
 char *cjson_PrintBuffered(cjson *item, int prebuffer, int fmt) {
   printbuffer p;
   p.buffer = (char *) cjson_malloc(prebuffer);
@@ -800,6 +801,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
     ptr = ensure(p, len+1);
     if (!ptr) return 0;
     *ptr++ = '{';
+    *ptr++ = '\n';
     p->offset += len;
     child = item->child;
     ++depth;
@@ -1108,7 +1110,7 @@ cjson *cjson_CreateString(const char *string) {
     item->type = cjson_String;
     item->valuestring = cjson_strdup(string);
   }
-  return 0;
+  return item;
 }
 
 cjson *cjson_CreateArray(void) {
