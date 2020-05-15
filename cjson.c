@@ -822,7 +822,7 @@ static char *print_object(cjson *item, int depth, int fmt, printbuffer *p) {
       if (!ptr) return 0;
       *ptr++ = ':';
       if (fmt) 
-        *ptr++ = '\t';
+        *ptr++ = (child->type == cjson_Object) ? ' ' : '\t';//自己喜欢的格式
       p->offset += len;
       print_value(child, depth, fmt, p);
       p->offset = update(p);
